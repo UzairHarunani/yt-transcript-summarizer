@@ -28,4 +28,11 @@ const YTTranscriptAPI = {
     }
 };
 
+async function fetchTranscriptForVideo(videoId) {
+  return await YTTranscriptAPI.fetchTranscript(videoId);
+}
+
+// expose
+window.fetchTranscriptForVideo = fetchTranscriptForVideo;
+
 export default YTTranscriptAPI;
