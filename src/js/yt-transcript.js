@@ -32,7 +32,8 @@ async function fetchTranscriptForVideo(videoId) {
   return await YTTranscriptAPI.fetchTranscript(videoId);
 }
 
-// expose
+// expose to other client scripts
 window.fetchTranscriptForVideo = fetchTranscriptForVideo;
+window.YTTranscriptAPI = YTTranscriptAPI;
 
 export default YTTranscriptAPI;
