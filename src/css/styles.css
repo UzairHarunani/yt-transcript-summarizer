@@ -55,3 +55,34 @@ button:hover {
     background-color: #e9ecef;
     border-left: 5px solid #ffc107;
 }
+
+.status {
+  margin: 12px 0;
+  font-family: system-ui, Arial, sans-serif;
+  color: #333;
+  display: flex;
+  align-items: center;
+  min-height: 20px;
+}
+
+/* small spinner */
+.status .spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(0,0,0,0.15);
+  border-top-color: rgba(0,0,0,0.6);
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 8px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* subtle disabled button look */
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
