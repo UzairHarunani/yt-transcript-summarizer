@@ -28,13 +28,13 @@ const YTTranscriptAPI = {
     }
 };
 
-// Helper for client: extract video id from URL or accept id directly
+// client helper: extract video id from URL or accept id directly
 function extractVideoId(urlOrId) {
   if (!urlOrId || typeof urlOrId !== 'string') return null;
   // v=..., youtu.be/..., /embed/, or plain id
   const patterns = [
     /(?:v=|v\/|embed\/|watch\?v=|youtu\.be\/)([0-9A-Za-z_-]{11})/,
-    /([0-9A-Za-z_-]{11})/
+    /^([0-9A-Za-z_-]{11})$/
   ];
   for (const p of patterns) {
     const m = urlOrId.match(p);
@@ -53,5 +53,5 @@ window.YTTranscriptAPI = YTTranscriptAPI;
 
 // exposed helpers for other client code
 window.extractVideoId = extractVideoId;
-window.getVideoId = (urlOrId) => extractVideoId(urlOrId);
+window.getVideoId = extractVideoId;
 

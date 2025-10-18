@@ -46,9 +46,10 @@ document.addEventListener('DOMContentLoaded', () => {
           body: JSON.stringify({ videoId: videoUrl })
         });
 
-        const data = await res.json();
+        const data = await res.json().catch(() => null);
         if (!res.ok) {
-          throw new Error(JSON.stringify(data));
+          const errMsg = data && data.error ? JSON.stringify(data) : res.statusText;
+          throw new Error(errMsg);
         }
 
         transcriptOutput.innerText = data.transcript || '';
@@ -82,13 +83,13 @@ document.addEventListener('DOMContentLoaded', () => {
           body: JSON.stringify({ transcript })
         });
 
-        const data = await res.json();
+        const data = await res.json().catch(() => null);
         if (!res.ok) {
-          throw new Error(JSON.stringify(data));
+          const errMsg = data && data.error ? JSON.stringify(data) : res.statusText;
+          throw new Error(errMsg);
         }
 
         summaryOutput.innerText = data.summary || '';
-        quizOutput.innerText = '';
       } catch (err) {
         console.error('Error generating summary:', err);
         alert('Error generating summary: ' + (err.message || err));
