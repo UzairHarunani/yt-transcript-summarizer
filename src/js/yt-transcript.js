@@ -36,4 +36,3 @@ async function fetchTranscriptForVideo(videoId) {
 window.fetchTranscriptForVideo = fetchTranscriptForVideo;
 window.YTTranscriptAPI = YTTranscriptAPI;
 
-export default YTTranscriptAPI;
