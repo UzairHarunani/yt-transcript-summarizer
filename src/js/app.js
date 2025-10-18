@@ -19,7 +19,6 @@ function setDisabledState(disabled) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  // element-safe attachments using IDs from index.html
   const fetchBtn = document.getElementById('fetchTranscript');
   const genBtn = document.getElementById('generateSummary');
   const saveBtn = document.getElementById('saveSummary');
@@ -27,12 +26,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const videoInput = document.getElementById('youtubeLink');
   const transcriptOutput = document.getElementById('transcriptOutput');
   const summaryOutput = document.getElementById('summaryOutput');
+  const quizOutput = document.getElementById('quizOutput');
 
   if (fetchBtn) {
     fetchBtn.addEventListener('click', async () => {
-      const videoUrl = videoInput ? videoInput.value : '';
+      const videoUrl = videoInput ? videoInput.value.trim() : '';
       if (!videoUrl) {
-        alert('Please enter a YouTube URL');
+        alert('Please enter a YouTube URL or video ID');
         return;
       }
 
@@ -46,19 +46,19 @@ document.addEventListener('DOMContentLoaded', () => {
           body: JSON.stringify({ videoId: videoUrl })
         });
 
+        const data = await res.json();
         if (!res.ok) {
-          const t = await res.text();
-          throw new Error(t || 'Failed to fetch transcript');
+          throw new Error(JSON.stringify(data));
         }
 
-        const data = await res.json();
-        // adapt depending on server response shape
-        transcriptOutput.innerText = data.transcript || (data.items ? JSON.stringify(data.items, null, 2) : '');
+        transcriptOutput.innerText = data.transcript || '';
+        summaryOutput.innerText = '';
+        quizOutput.innerText = '';
       } catch (err) {
-        console.error(err);
+        console.error('Error fetching transcript:', err);
         alert('Error fetching transcript: ' + (err.message || err));
       } finally {
-        showStatus(''); // hide
+        showStatus('');
         setDisabledState(false);
       }
     });
@@ -66,9 +66,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (genBtn) {
     genBtn.addEventListener('click', async () => {
-      const transcript = transcriptOutput ? transcriptOutput.innerText : '';
+      const transcript = transcriptOutput ? transcriptOutput.innerText.trim() : '';
       if (!transcript) {
-        alert('No transcript to summarize');
+        alert('No transcript available to summarize');
         return;
       }
 
@@ -82,18 +82,18 @@ document.addEventListener('DOMContentLoaded', () => {
           body: JSON.stringify({ transcript })
         });
 
+        const data = await res.json();
         if (!res.ok) {
-          const t = await res.text();
-          throw new Error(t || 'Failed to generate summary');
+          throw new Error(JSON.stringify(data));
         }
 
-        const data = await res.json();
         summaryOutput.innerText = data.summary || '';
+        quizOutput.innerText = '';
       } catch (err) {
-        console.error(err);
+        console.error('Error generating summary:', err);
         alert('Error generating summary: ' + (err.message || err));
       } finally {
-        showStatus(''); // hide
+        showStatus('');
         setDisabledState(false);
       }
     });
@@ -101,24 +101,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (saveBtn) {
     saveBtn.addEventListener('click', () => {
-      const summary = summaryOutput ? summaryOutput.innerText : '';
+      const summary = summaryOutput ? summaryOutput.innerText.trim() : '';
       if (!summary) {
         alert('Nothing to save');
         return;
       }
-      const summaries = JSON.parse(localStorage.getItem('summaries')) || [];
+      const summaries = JSON.parse(localStorage.getItem('summaries') || '[]');
       summaries.push({ summary, savedAt: new Date().toISOString() });
       localStorage.setItem('summaries', JSON.stringify(summaries));
-      alert('Summary saved successfully!');
+      alert('Summary saved locally');
     });
-  }
-
-  // optional: keep any existing submitBtn behavior
-  const submitBtn = document.getElementById('submitBtn');
-  if (submitBtn) {
-    // guard in case handleSubmit is not defined
-    if (typeof handleSubmit === 'function') {
-      submitBtn.addEventListener('click', handleSubmit);
-    }
   }
 });
