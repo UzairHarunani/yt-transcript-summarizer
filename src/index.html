@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Transcript Summarizer</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>YouTube Transcript Summarizer</h1>
+        <input type="text" id="youtubeLink" placeholder="Enter YouTube Video URL" />
+        <button id="fetchTranscript">Fetch Transcript</button>
+        <button id="generateSummary">Generate Summary</button>
+        <button id="saveSummary">Save Summary</button>
+        
+        <h2>Transcript</h2>
+        <div id="transcriptOutput"></div>
+        
+        <h2>Summary</h2>
+        <div id="summaryOutput"></div>
+        
+        <h2>Quiz Questions</h2>
+        <div id="quizOutput"></div>
+    </div>
+    
+    <script src="js/app.js"></script>
+    <script src="js/yt-transcript.js"></script>
+    <script src="js/openrouter.js"></script>
+</body>
+</html>
