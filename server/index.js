@@ -1,20 +1,26 @@
+require('dotenv').config();
 const express = require('express');
-const bodyParser = require('body-parser');
-const cors = require('cors');
-const apiRoutes = require('./routes/api');
+const path = require('path');
+const apiRouter = require('./routes/api');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
 
-// Middleware
-app.use(cors());
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// Routes
-app.use('/api', apiRoutes);
+// serve static front-end (change '../src' to your public folder if different)
+app.use(express.static(path.join(__dirname, '../src')));
 
-// Start the server
-app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+// mount API routes under /api
+app.use('/api', apiRouter);
+
+// explicit root route to index.html (SPA fallback)
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '../src/index.html'));
 });
+
+// simple health endpoint
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Listening on ${PORT}`));
