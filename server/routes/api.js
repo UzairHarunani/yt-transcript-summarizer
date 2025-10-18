@@ -2,26 +2,22 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 
-// Load env (index.js may already do this — safe to call again)
+// Load env (index.js may already do this)
 require('dotenv').config();
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const SHOW_STACK = process.env.SHOW_STACK === 'true';
 
-// try optional server package if installed (no crash if missing)
-let optionalGetTranscript = null;
+// optional server package
+let getTranscriptPackage = null;
 try {
-  // package exports: { getTranscript }
-  /* eslint-disable global-require */
   const mod = require('youtube-transcript');
-  if (mod && typeof mod.getTranscript === 'function') optionalGetTranscript = mod.getTranscript;
+  if (mod && typeof mod.getTranscript === 'function') getTranscriptPackage = mod.getTranscript;
 } catch (e) {
-  // ignore — we'll fallback to timedtext HTTP endpoint
-  console.warn('youtube-transcript not available, will use timedtext fallback');
+  console.warn('youtube-transcript not installed; will use timedtext fallback');
 }
 
-// helpers
 function extractVideoId(urlOrId) {
   if (!urlOrId || typeof urlOrId !== 'string') return null;
-  // common patterns: v=..., youtu.be/, /embed/, or plain 11-char id
   const patterns = [
     /(?:v=|v\/|embed\/|watch\?v=|youtu\.be\/)([0-9A-Za-z_-]{11})/,
     /^([0-9A-Za-z_-]{11})$/
@@ -35,7 +31,6 @@ function extractVideoId(urlOrId) {
 
 function decodeHTMLEntities(str) {
   if (!str) return '';
-  // basic replacements + numeric entities
   const map = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" };
   let out = str.replace(/&(amp|lt|gt|quot|#39);/g, m => map[m] || m);
   out = out.replace(/&#(\d+);/g, (m, num) => String.fromCharCode(parseInt(num, 10)));
@@ -59,7 +54,6 @@ function parseTimedTextList(xml) {
 }
 
 function parseTimedText(xml) {
-  // extract <text ...>content</text> and decode entities, preserve some spacing
   const parts = [];
   const re = /<text[^>]*?>(.*?)<\/text>/gis;
   let m;
@@ -94,43 +88,43 @@ router.post('/fetch-transcript', async (req, res) => {
     const id = extractVideoId(videoId);
     if (!id) return res.status(400).json({ error: 'Invalid YouTube URL or ID' });
 
-    // 1) try optional server package if available
-    if (optionalGetTranscript) {
+    // 1) try youtube-transcript package first (more reliable)
+    if (getTranscriptPackage) {
       try {
-        const items = await optionalGetTranscript(id);
+        const items = await getTranscriptPackage(id);
         if (Array.isArray(items) && items.length > 0) {
           const transcriptText = items.map(i => i.text).join(' ');
           return res.json({ transcript: transcriptText });
         }
       } catch (e) {
-        // fall through to timedtext fallback
-        console.warn('optional getTranscript failed, falling back:', e?.message || e);
+        console.warn('youtube-transcript failed, falling back:', e?.message || e);
       }
     }
 
-    // 2) timedtext fallback: get list of tracks, prefer English, then any available
+    // 2) timedtext fallback
     const tracks = await fetchTimedTextList(id);
     if (!tracks || tracks.length === 0) {
       return res.status(404).json({ error: 'No captions available for this video' });
     }
 
-    // prefer en / en-US / en-GB
+    // prefer English then first available
     const preferred = tracks.find(t => t.lang && /^en(?:-|$)/i.test(t.lang)) || tracks[0];
     const lang = preferred.lang || tracks[0].lang || 'en';
     const transcriptText = await fetchTimedTextForLang(id, lang);
-
     if (!transcriptText || transcriptText.trim().length === 0) {
       return res.status(404).json({ error: 'Captions exist but could not be retrieved' });
     }
 
-    res.json({ transcript: transcriptText });
+    return res.json({ transcript: ensureSize(transcriptText) });
   } catch (err) {
     console.error('fetch-transcript error:', err?.response?.data ?? err?.message ?? err);
-    res.status(500).json({ error: 'Failed to fetch transcript', detail: err?.message ?? null });
+    const payload = { error: 'Failed to fetch transcript' };
+    if (SHOW_STACK) payload.detail = err?.message ?? null, payload.stack = err?.stack;
+    return res.status(500).json(payload);
   }
 });
 
-// POST /api/generate-summary
+// POST /api/generate-summary (unchanged)
 router.post('/generate-summary', async (req, res) => {
   try {
     const { transcript } = req.body || {};
@@ -171,10 +165,10 @@ router.post('/generate-summary', async (req, res) => {
       return res.status(502).json({ error: 'AI did not return a summary', raw: response?.data });
     }
 
-    res.json({ summary: aiSummary });
+    return res.json({ summary: aiSummary });
   } catch (error) {
     console.error('generate-summary error:', error?.response?.data ?? error?.message ?? error);
-    res.status(500).json({ error: 'Failed to generate summary', detail: error?.message ?? null });
+    return res.status(500).json({ error: 'Failed to generate summary', detail: error?.message ?? null });
   }
 });
 
