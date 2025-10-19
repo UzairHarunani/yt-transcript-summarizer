@@ -7,48 +7,53 @@ require('dotenv').config();
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const SHOW_STACK = process.env.SHOW_STACK === 'true';
 
-// robust loader + debug info for youtube-transcript (adaptive)
+// robust loader (improved) for youtube-transcript package
 let getTranscriptFromPackage = null;
 try {
   const mod = require('youtube-transcript');
-  try {
-    console.log('YTTRANSCRIPT module raw:', typeof mod);
-    console.log('YTTRANSCRIPT module keys:', Object.keys(mod || {}));
-    if (mod && mod.default) {
-      console.log('YTTRANSCRIPT default export type:', typeof mod.default, Object.keys(mod.default || {}));
-    }
-  } catch (dbg) {
-    console.warn('Failed to inspect youtube-transcript module shape:', dbg?.message ?? dbg);
-  }
+  console.log('YTTRANSCRIPT module raw:', typeof mod);
+  console.log('YTTRANSCRIPT module keys:', Object.keys(mod || {}));
 
-  // If package exports a YoutubeTranscript class (observed keys), try multiple access patterns:
-  if (mod && mod.YoutubeTranscript) {
-    const YTClass = mod.YoutubeTranscript;
-    // 1) static method
-    if (typeof YTClass.getTranscript === 'function') {
-      getTranscriptFromPackage = async (id) => {
-        console.log('Using YoutubeTranscript.getTranscript (static)');
-        return await YTClass.getTranscript(id);
-      };
-    } else {
-      // 2) instance methods: try common names
+  const YTClass = mod.YoutubeTranscript || mod.Youtube || null;
+  if (YTClass) {
+    console.log('YTClass type:', typeof YTClass);
+    try {
+      const staticNames = Object.getOwnPropertyNames(YTClass).filter(n => !['length','name','prototype'].includes(n));
+      const protoNames = Object.getOwnPropertyNames(YTClass.prototype || {}).filter(n => n !== 'constructor');
+      console.log('YTClass static names:', staticNames);
+      console.log('YTClass prototype names:', protoNames);
+    } catch (e) {
+      console.warn('Could not list YTClass members:', e?.message ?? e);
+    }
+
+    const methodCandidates = [
+      'getTranscript','fetch','fetchTranscript','get','getSubtitles','fetchSubtitles',
+      'transcript','getTranscriptForVideo','getTranscriptByVideoId','getCaptions','fetchCaptions'
+    ];
+
+    // try static methods first
+    for (const name of methodCandidates) {
+      if (typeof YTClass[name] === 'function') {
+        getTranscriptFromPackage = async (id) => {
+          console.log(`Using YoutubeTranscript.${name} (static)`);
+          return await YTClass[name](id);
+        };
+        break;
+      }
+    }
+
+    // try instance methods
+    if (!getTranscriptFromPackage) {
       try {
         const inst = new YTClass();
-        if (typeof inst.getTranscript === 'function') {
-          getTranscriptFromPackage = async (id) => {
-            console.log('Using new YoutubeTranscript().getTranscript()');
-            return await inst.getTranscript(id);
-          };
-        } else if (typeof inst.fetch === 'function') {
-          getTranscriptFromPackage = async (id) => {
-            console.log('Using new YoutubeTranscript().fetch()');
-            return await inst.fetch(id);
-          };
-        } else if (typeof inst.fetchTranscript === 'function') {
-          getTranscriptFromPackage = async (id) => {
-            console.log('Using new YoutubeTranscript().fetchTranscript()');
-            return await inst.fetchTranscript(id);
-          };
+        for (const name of methodCandidates) {
+          if (inst && typeof inst[name] === 'function') {
+            getTranscriptFromPackage = async (id) => {
+              console.log(`Using new YoutubeTranscript().${name}()`);
+              return await inst[name](id);
+            };
+            break;
+          }
         }
       } catch (instErr) {
         console.warn('Could not instantiate YoutubeTranscript class:', instErr?.message ?? instErr);
@@ -56,12 +61,10 @@ try {
     }
   }
 
-  // Support other shapes: default export as function/class or direct function
+  // fallback: support function-style or default export shapes
   if (!getTranscriptFromPackage) {
-    // default export
     const candidate = mod.default || mod;
     if (typeof candidate === 'function') {
-      // function that likely returns transcript
       getTranscriptFromPackage = async (id) => {
         console.log('Using function-style export from youtube-transcript');
         return await candidate(id);
