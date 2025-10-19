@@ -7,11 +7,22 @@ require('dotenv').config();
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const SHOW_STACK = process.env.SHOW_STACK === 'true';
 
-// try to load youtube-transcript (must be in package.json / installed)
+// robust loader + debug info for youtube-transcript
 let getTranscriptFromPackage = null;
 try {
   const mod = require('youtube-transcript');
-  // support multiple export shapes: named getTranscript, default export, or function export
+  // log module shape for debugging on Render
+  try {
+    console.log('YTTRANSCRIPT module raw:', typeof mod);
+    console.log('YTTRANSCRIPT module keys:', Object.keys(mod || {}));
+    if (mod && mod.default) {
+      console.log('YTTRANSCRIPT default export type:', typeof mod.default, Object.keys(mod.default || {}));
+    }
+  } catch (dbg) {
+    console.warn('Failed to inspect youtube-transcript module shape:', dbg?.message ?? dbg);
+  }
+
+  // support multiple export shapes
   if (mod) {
     if (typeof mod.getTranscript === 'function') {
       getTranscriptFromPackage = mod.getTranscript;
@@ -23,9 +34,9 @@ try {
       getTranscriptFromPackage = mod.default;
     }
   }
-  console.log('youtube-transcript loaded:', !!getTranscriptFromPackage);
+  console.log('youtube-transcript loaded (usable):', !!getTranscriptFromPackage);
 } catch (e) {
-  console.warn('youtube-transcript not available (require failed):', e?.message ?? e);
+  console.warn('youtube-transcript require failed:', e?.message ?? e);
 }
 
 // helpers
