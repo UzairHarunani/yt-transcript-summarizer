@@ -83,6 +83,7 @@ function ensureSize(text, maxChars = 150000) {
 
 // POST /api/fetch-transcript
 router.post('/fetch-transcript', async (req, res) => {
+  console.log('DEBUG fetch-transcript body:', JSON.stringify(req.body)); // <-- add this
   try {
     const { videoId } = req.body || {};
     const id = extractVideoId(videoId);
