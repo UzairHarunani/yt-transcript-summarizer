@@ -1,6 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
+const { spawnSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const ytdl = require('ytdl-core');
 
 // Load env
 require('dotenv').config();
@@ -179,6 +184,61 @@ function ensureSize(text, maxChars = 150000) {
   if (!text) return '';
   if (text.length <= maxChars) return text;
   return text.slice(0, maxChars) + '\n\n[transcript truncated]';
+}
+
+// transcribe with whisper.cpp binary fallback
+async function transcribeAudioViaWhisperCpp(videoId) {
+  // Environment variables (set these in Render Environment)
+  // WHISPER_CPP_PATH -> path to whisper.cpp binary (e.g. /home/app/whisper.cpp/main)
+  // WHISPER_MODEL_PATH -> path to ggml model file (e.g. /home/app/models/ggml-model-whisper-tiny.en.bin)
+  const binPath = process.env.WHISPER_CPP_PATH || '/usr/local/bin/whisper_cpp_main';
+  const modelPath = process.env.WHISPER_MODEL_PATH;
+  if (!modelPath) {
+    console.warn('WHISPER_MODEL_PATH not set; cannot use whisper.cpp fallback');
+    return null;
+  }
+
+  const tmpFile = path.join(os.tmpdir(), `yt_${videoId}_${Date.now()}.mp3`);
+  try {
+    // download audio
+    const url = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+    await new Promise((resolve, reject) => {
+      const stream = ytdl(url, { quality: 'highestaudio', filter: 'audioonly' })
+        .pipe(fs.createWriteStream(tmpFile));
+      stream.on('finish', resolve);
+      stream.on('error', reject);
+    });
+
+    // run whisper.cpp binary:
+    // expected cli: <bin> -m <model> -f <audiofile> -t 1 (threads optional) -otxt (output to stdout may vary)
+    // adjust arguments based on the binary you have
+    const args = ['-m', modelPath, '-f', tmpFile, '-otxt'];
+    const run = spawnSync(binPath, args, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
+
+    if (run.error) {
+      console.error('whisper.cpp spawn error:', run.error);
+      return null;
+    }
+    if (run.status !== 0) {
+      console.warn('whisper.cpp exit code', run.status, 'stderr:', run.stderr);
+      // some binaries print transcript to stdout or write .txt beside file; check stdout first
+    }
+
+    // many builds write to stdout; fallback to stdout or read generated .txt file
+    let out = (run.stdout || '').trim();
+    if (!out) {
+      // try reading input filename + .txt
+      const txtPath = tmpFile + '.txt';
+      if (fs.existsSync(txtPath)) out = fs.readFileSync(txtPath, 'utf8').trim();
+    }
+
+    return out || null;
+  } catch (err) {
+    console.error('transcribeAudioViaWhisperCpp error:', err?.message ?? err);
+    return null;
+  } finally {
+    try { if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile); } catch (_) {}
+  }
 }
 
 // POST /api/fetch-transcript
