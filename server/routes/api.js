@@ -7,11 +7,10 @@ require('dotenv').config();
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const SHOW_STACK = process.env.SHOW_STACK === 'true';
 
-// robust loader + debug info for youtube-transcript
+// robust loader + debug info for youtube-transcript (adaptive)
 let getTranscriptFromPackage = null;
 try {
   const mod = require('youtube-transcript');
-  // log module shape for debugging on Render
   try {
     console.log('YTTRANSCRIPT module raw:', typeof mod);
     console.log('YTTRANSCRIPT module keys:', Object.keys(mod || {}));
@@ -22,21 +21,95 @@ try {
     console.warn('Failed to inspect youtube-transcript module shape:', dbg?.message ?? dbg);
   }
 
-  // support multiple export shapes
-  if (mod) {
-    if (typeof mod.getTranscript === 'function') {
-      getTranscriptFromPackage = mod.getTranscript;
-    } else if (typeof mod === 'function') {
-      getTranscriptFromPackage = mod;
-    } else if (mod.default && typeof mod.default.getTranscript === 'function') {
-      getTranscriptFromPackage = mod.default.getTranscript;
-    } else if (mod.default && typeof mod.default === 'function') {
-      getTranscriptFromPackage = mod.default;
+  // If package exports a YoutubeTranscript class (observed keys), try multiple access patterns:
+  if (mod && mod.YoutubeTranscript) {
+    const YTClass = mod.YoutubeTranscript;
+    // 1) static method
+    if (typeof YTClass.getTranscript === 'function') {
+      getTranscriptFromPackage = async (id) => {
+        console.log('Using YoutubeTranscript.getTranscript (static)');
+        return await YTClass.getTranscript(id);
+      };
+    } else {
+      // 2) instance methods: try common names
+      try {
+        const inst = new YTClass();
+        if (typeof inst.getTranscript === 'function') {
+          getTranscriptFromPackage = async (id) => {
+            console.log('Using new YoutubeTranscript().getTranscript()');
+            return await inst.getTranscript(id);
+          };
+        } else if (typeof inst.fetch === 'function') {
+          getTranscriptFromPackage = async (id) => {
+            console.log('Using new YoutubeTranscript().fetch()');
+            return await inst.fetch(id);
+          };
+        } else if (typeof inst.fetchTranscript === 'function') {
+          getTranscriptFromPackage = async (id) => {
+            console.log('Using new YoutubeTranscript().fetchTranscript()');
+            return await inst.fetchTranscript(id);
+          };
+        }
+      } catch (instErr) {
+        console.warn('Could not instantiate YoutubeTranscript class:', instErr?.message ?? instErr);
+      }
     }
   }
+
+  // Support other shapes: default export as function/class or direct function
+  if (!getTranscriptFromPackage) {
+    // default export
+    const candidate = mod.default || mod;
+    if (typeof candidate === 'function') {
+      // function that likely returns transcript
+      getTranscriptFromPackage = async (id) => {
+        console.log('Using function-style export from youtube-transcript');
+        return await candidate(id);
+      };
+    } else if (candidate && typeof candidate.getTranscript === 'function') {
+      getTranscriptFromPackage = async (id) => {
+        console.log('Using candidate.getTranscript from youtube-transcript');
+        return await candidate.getTranscript(id);
+      };
+    }
+  }
+
   console.log('youtube-transcript loaded (usable):', !!getTranscriptFromPackage);
 } catch (e) {
   console.warn('youtube-transcript require failed:', e?.message ?? e);
+}
+
+// helper to normalize various return shapes to a transcript string
+async function tryPackageAndNormalize(id) {
+  if (!getTranscriptFromPackage) return null;
+  try {
+    const items = await getTranscriptFromPackage(id);
+    if (!items) return null;
+    // if string
+    if (typeof items === 'string') return items;
+    // if array of strings
+    if (Array.isArray(items) && items.length > 0 && typeof items[0] === 'string') {
+      return items.join(' ');
+    }
+    // if array of objects with text property
+    if (Array.isArray(items)) {
+      const joined = items.map(it => {
+        if (!it) return '';
+        if (typeof it === 'string') return it;
+        return it.text || it.caption || it.transcript || '';
+      }).filter(Boolean).join(' ');
+      if (joined) return joined;
+    }
+    // if object with transcript property
+    if (typeof items === 'object' && (items.transcript || items.text)) {
+      return items.transcript || items.text;
+    }
+    // unknown shape: stringify as fallback
+    return JSON.stringify(items);
+  } catch (err) {
+    console.warn('youtube-transcript call failed:', err?.message ?? err);
+    return null;
+  }
 }
 
 // helpers
