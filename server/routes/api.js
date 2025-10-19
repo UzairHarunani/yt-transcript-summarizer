@@ -10,12 +10,22 @@ const SHOW_STACK = process.env.SHOW_STACK === 'true';
 // try to load youtube-transcript (must be in package.json / installed)
 let getTranscriptFromPackage = null;
 try {
-  // the package exports getTranscript
   const mod = require('youtube-transcript');
-  getTranscriptFromPackage = typeof mod.getTranscript === 'function' ? mod.getTranscript : null;
+  // support multiple export shapes: named getTranscript, default export, or function export
+  if (mod) {
+    if (typeof mod.getTranscript === 'function') {
+      getTranscriptFromPackage = mod.getTranscript;
+    } else if (typeof mod === 'function') {
+      getTranscriptFromPackage = mod;
+    } else if (mod.default && typeof mod.default.getTranscript === 'function') {
+      getTranscriptFromPackage = mod.default.getTranscript;
+    } else if (mod.default && typeof mod.default === 'function') {
+      getTranscriptFromPackage = mod.default;
+    }
+  }
   console.log('youtube-transcript loaded:', !!getTranscriptFromPackage);
 } catch (e) {
-  console.warn('youtube-transcript not available:', e?.message ?? e);
+  console.warn('youtube-transcript not available (require failed):', e?.message ?? e);
 }
 
 // helpers
