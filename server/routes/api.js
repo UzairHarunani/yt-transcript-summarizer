@@ -2,20 +2,23 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 
-// Load env (index.js may already do this)
+// Load env
 require('dotenv').config();
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const SHOW_STACK = process.env.SHOW_STACK === 'true';
 
-// optional server package
-let getTranscriptPackage = null;
+// try to load youtube-transcript (must be in package.json / installed)
+let getTranscriptFromPackage = null;
 try {
+  // the package exports getTranscript
   const mod = require('youtube-transcript');
-  if (mod && typeof mod.getTranscript === 'function') getTranscriptPackage = mod.getTranscript;
+  getTranscriptFromPackage = typeof mod.getTranscript === 'function' ? mod.getTranscript : null;
+  console.log('youtube-transcript loaded:', !!getTranscriptFromPackage);
 } catch (e) {
-  console.warn('youtube-transcript not installed; will use timedtext fallback');
+  console.warn('youtube-transcript not available:', e?.message ?? e);
 }
 
+// helpers
 function extractVideoId(urlOrId) {
   if (!urlOrId || typeof urlOrId !== 'string') return null;
   const patterns = [
@@ -83,39 +86,42 @@ function ensureSize(text, maxChars = 150000) {
 
 // POST /api/fetch-transcript
 router.post('/fetch-transcript', async (req, res) => {
-  console.log('DEBUG fetch-transcript body:', JSON.stringify(req.body)); // <-- add this
+  console.log('DEBUG fetch-transcript body:', JSON.stringify(req.body));
   try {
     const { videoId } = req.body || {};
     const id = extractVideoId(videoId);
     if (!id) return res.status(400).json({ error: 'Invalid YouTube URL or ID' });
 
-    // 1) try youtube-transcript package first (more reliable)
-    if (getTranscriptPackage) {
+    // 1) Try the youtube-transcript package first (most reliable)
+    if (getTranscriptFromPackage) {
       try {
-        const items = await getTranscriptPackage(id);
+        console.log('Attempting youtube-transcript.getTranscript for', id);
+        const items = await getTranscriptFromPackage(id);
         if (Array.isArray(items) && items.length > 0) {
           const transcriptText = items.map(i => i.text).join(' ');
-          return res.json({ transcript: transcriptText });
+          return res.json({ transcript: ensureSize(transcriptText) });
         }
-      } catch (e) {
-        console.warn('youtube-transcript failed, falling back:', e?.message || e);
+        console.warn('youtube-transcript returned no items for', id);
+      } catch (errPkg) {
+        console.warn('youtube-transcript failed:', errPkg?.message ?? errPkg);
+        // fall through to timedtext fallback
       }
+    } else {
+      console.log('youtube-transcript not installed; skipping package attempt');
     }
 
-    // 2) timedtext fallback
+    // 2) Timedtext fallback
+    console.log('Timedtext fallback for', id);
     const tracks = await fetchTimedTextList(id);
     if (!tracks || tracks.length === 0) {
       return res.status(404).json({ error: 'No captions available for this video' });
     }
-
-    // prefer English then first available
     const preferred = tracks.find(t => t.lang && /^en(?:-|$)/i.test(t.lang)) || tracks[0];
     const lang = preferred.lang || tracks[0].lang || 'en';
     const transcriptText = await fetchTimedTextForLang(id, lang);
     if (!transcriptText || transcriptText.trim().length === 0) {
       return res.status(404).json({ error: 'Captions exist but could not be retrieved' });
     }
-
     return res.json({ transcript: ensureSize(transcriptText) });
   } catch (err) {
     console.error('fetch-transcript error:', err?.response?.data ?? err?.message ?? err);
@@ -139,7 +145,6 @@ router.post('/generate-summary', async (req, res) => {
 
     const safeTranscript = ensureSize(transcript, 100000);
     const systemPrompt = "You are a helpful AI assistant. Summarize the following transcript and extract core points.";
-
     const payload = {
       model: "openai/gpt-5",
       messages: [
